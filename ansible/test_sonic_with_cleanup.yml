@@ -1,0 +1,36 @@
+# #
+# Parameters:
+#   dut_name
+#   passwords_file
+#   testbed_name
+#   testcase_name
+#   verbosity
+
+- name: Set default verbosity
+  set_fact: verbosity=""
+  when: verbosity is not defined
+
+- name: Run test
+  ignore_errors: true
+  shell: >
+    ansible-playbook test_sonic.yml
+    -i inventory
+    {{ verbosity }}
+    -l {{ dut_name }}
+    -e "testbed_name={{ testbed_name }} testcase_name={{ testcase_name }}" >> {{ test_output_file }}
+  register: test_run
+
+- block:
+  - name: Remove failed topology
+    shell: ./testbed-cli.sh remove-topo {{ testbed_name }} {{ passwords_file }}
+
+  - name: Restore test topology
+    shell: ./testbed-cli.sh add-topo {{ testbed_name }} {{ passwords_file }}
+
+  - name: Restore switch topology
+    shell: >
+      ansible-playbook
+      -i lab config_sonic_basedon_testbed.yml
+      -l {{ dut_name }}
+      -e testbed_name={{ testbed_name }} -e deploy=true -e save=true
+  when: test_run.rc != 0

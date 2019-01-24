@@ -1,0 +1,51 @@
+---
+# This Playbook would test all the tests from topology.
+# If a test has failed, the topology is re-created
+#
+# Examples of running this playbook:
+#
+# ansible-playbook -i lab test_sonic_topo.yml -e testbed_name=bfn-t1 -e passwords_file=./password.txt -e dut_name=switch2 -e verbosity=-vvv
+#
+
+- name: Running community test cases
+  hosts: 127.0.0.1
+  connection: local
+  gather_facts: false
+  tasks:
+    - include_vars: "roles/test/vars/testcases.yml"
+
+    - name: set default testbed file
+      set_fact:
+        testbed_file: testbed.csv
+      when: testbed_file is not defined
+
+    - name: Gathering testbed information
+      test_facts: testbed_name="{{ testbed_name }}" testbed_file="{{ testbed_file }}"
+
+    - name: Add test topology
+      shell: ./testbed-cli.sh add-topo {{ testbed_name }} {{ passwords_file }}
+
+    - name: Add switch topology
+      shell: >
+        ansible-playbook
+        -i lab config_sonic_basedon_testbed.yml
+        -l {{ dut_name }}
+        -e testbed_name={{ testbed_name }} -e deploy=true -e save=true
+
+    - name: Create directory for logs
+      file:
+        path: log/{{ testbed_name }}
+        state: directory
+        mode: 0755
+
+    - name: Run all cases
+      include: >
+        test_sonic_with_cleanup.yml
+        testcase_name={{ item }}
+        test_output_file=log/{{ testbed_name }}/{{ item }}
+      with_list:
+        "{{ topo_testcases[testbed_facts['topo']] }}"
+
+    - name: Remove topology
+      shell: ./testbed-cli.sh remove-topo {{ testbed_name }} {{ passwords_file }}
+
